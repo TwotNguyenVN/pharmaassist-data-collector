@@ -1,0 +1,31 @@
+{
+  "name": "pharmaassist-data-collector",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:browser": "playwright install chromium",
+    "collect:categories": "tsx src/01_collect_categories.ts",
+    "collect:links": "tsx src/02_collect_product_links.ts",
+    "collect:details:sample": "cross-env CRAWL_MODE=sample tsx src/03_collect_product_details.ts",
+    "collect:details:full": "cross-env CRAWL_MODE=full tsx src/03_collect_product_details.ts",
+    "retry:failed": "tsx src/06_retry_failed.ts",
+    "normalize": "tsx src/04_normalize_data.ts",
+    "validate:data": "tsx src/07_validate_data.ts",
+    "generate:sql": "tsx src/05_generate_seed_sql.ts",
+    "collect:all:sample": "npm run collect:links && npm run collect:details:sample && npm run normalize && npm run validate:data && npm run generate:sql",
+    "collect:all:full": "npm run collect:links && npm run collect:details:full && npm run retry:failed && npm run normalize && npm run validate:data && npm run generate:sql",
+    "pipeline:sample:clean": "bash scripts/run_sample_pipeline.sh"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "zod": "^3.24.0",
+    "csv-stringify": "^6.5.0",
+    "slugify": "^1.6.6",
+    "cross-env": "^7.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  }
+}
