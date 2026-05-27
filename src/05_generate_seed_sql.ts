@@ -187,6 +187,22 @@ function getSqlHeader(): string {
 async function main(): Promise<void> {
   logInfo('=== Step 05: Generate Seed SQL ===');
   
+  // Load environment variables
+  const envPath = path.join(ROOT_DIR, '.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    envContent.split('\n').forEach(line => {
+      const match = line.match(/^\s*([\w\.\-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let value = match[2] ? match[2].trim() : '';
+        if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+        else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+        if (process.env[key] === undefined) process.env[key] = value;
+      }
+    });
+  }
+
   // Create output directories
   fs.mkdirSync(SQL_DIR, { recursive: true });
 
@@ -383,7 +399,7 @@ async function main(): Promise<void> {
   logInfo(`Generated Master Data SQL: ${masterPath}`);
 
   // 2. Generate Product Data SQL Batches
-  const BATCH_SIZE = 500;
+  const BATCH_SIZE = parseInt(process.env.SQL_BATCH_SIZE || '500', 10);
   const totalProducts = productsCsv.length;
   const numBatches = Math.ceil(totalProducts / BATCH_SIZE);
   const batchPaths: string[] = [];

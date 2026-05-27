@@ -32,9 +32,10 @@ function askToContinue(promptMessage: string): Promise<boolean> {
 
 function isCloudflareBlocked(extractedLinks: ProductLinkRaw[]): boolean {
   if (extractedLinks.length === 0) return true; // Empty page (usually blocked API)
-  if (extractedLinks.length > 12) return false; // Actual product list loaded
   
-  const footerStaticUrls = [
+  // Expand the static list to include all 31 template sidebar/footer recommendation links
+  const templateStaticUrls = [
+    // 11 items from previous footerStaticUrls (Thuốc)
     'klenzit-15g-3330.html',
     'berocca-1515.html',
     'farzincol-10mg-3786.html',
@@ -45,13 +46,42 @@ function isCloudflareBlocked(extractedLinks: ProductLinkRaw[]): boolean {
     'telfast-180mg-2051.html',
     'kremils-s-3315.html',
     'eugica-vien-uong-dieu-tri-ho-cam-cum-490.html',
-    'differin-0130mg-17372.html'
+    'differin-0130mg-17372.html',
+    // 5 items from TPCN recommendations
+    'omega-3-power-120-v.html',
+    'nutrigrow-nutrimed-60-v.html',
+    'easylife-immuvita-100-v.html',
+    'siro-bo-sung-canxi-d3-k2-kingphar-6-x5-ong.html',
+    'siro-tang-cuong-suc-de-khang-va-chieu-cao-cho-tre-kid-grow-kenko-100-ml.html',
+    // 5 items from cosmetic recommendations
+    'pax-moly-blemish-care-30-ml-orange',
+    'svr-sebiaclear-gel-moussant',
+    'rice-therapy-rice-heartleaf-acne-cleanser',
+    'centella-cleansing-water',
+    'water-luminous-s-o-s-ringer-cleansing-water',
+    // 5 items from personal care recommendations (BCS)
+    'bao-cao-su-okamoto-crown',
+    'bcs-sagami-classic',
+    'bcs-sagami-love-me-gold',
+    'bcs-safefit-freezer-max',
+    'bcs-safefit-003',
+    // 5 items from medical equipment recommendations
+    'gac-rang-mieng-sachi',
+    'kim-lay-mau-lancet',
+    'nazorel-shampoo',
+    'xit-thom-mieng-aro-mouth',
+    'otosan-nasal-spray-baby'
   ];
-  
-  // Check if ALL extracted links belong to the footer static list
-  return extractedLinks.every(link => 
-    footerStaticUrls.some(staticUrl => link.product_url.includes(staticUrl))
+
+  // Count how many extracted links do NOT belong to this template static list
+  const nonStaticLinks = extractedLinks.filter(link => 
+    !templateStaticUrls.some(staticUrl => link.product_url.includes(staticUrl))
   );
+
+  // If there are 0 non-static links, it means we did NOT load any category-specific product cards
+  // (we only extracted template recommendations). This indicates that the product list API failed
+  // to load (usually due to a Cloudflare API rate limit / soft block).
+  return nonStaticLinks.length === 0;
 }
 
 // Load env
@@ -291,7 +321,23 @@ async function main(): Promise<void> {
   });
   const page = await context.newPage();
 
+  const outLinksPath = path.join(ROOT_DIR, 'data/raw/product_links.raw.json');
   const uniqueLinks = new Map<string, ProductLinkRaw>();
+  
+  if (fs.existsSync(outLinksPath)) {
+    try {
+      const existing = readJson<ProductLinkRaw[]>(outLinksPath, []);
+      for (const item of existing) {
+        if (item && item.product_url) {
+          uniqueLinks.set(item.product_url, item);
+        }
+      }
+      logInfo(`Loaded ${uniqueLinks.size} existing product links from ${outLinksPath}`);
+    } catch (err) {
+      logWarn(`Could not read existing product links from ${outLinksPath}: ${err}`);
+    }
+  }
+
   const duplicateUrls: string[] = [];
   let errorCount = 0;
   let consecutiveNoNewLinks = 0;
@@ -401,7 +447,6 @@ async function main(): Promise<void> {
   await browser.close();
 
   // Export results
-  const outLinksPath = path.join(ROOT_DIR, 'data/raw/product_links.raw.json');
   const outDuplicatesPath = path.join(ROOT_DIR, 'data/state/duplicate_urls.json');
   
   ensureDir(path.dirname(outLinksPath));

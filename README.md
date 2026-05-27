@@ -154,5 +154,102 @@ Thư mục dữ liệu đầu ra được cấu trúc rõ ràng như sau:
   - *Sự cố*: Lỗi ràng buộc khóa ngoại (foreign key constraint) khi import dữ liệu.
   - *Khắc phục*: Nhất thiết phải import file chứa dữ liệu danh mục/master data trước (`001_master_data.sql`), sau đó mới import các batch sản phẩm (`002_products_batch_001.sql`).
 
-## 13. Disclaimer y tế
+## 13. Quy trình cào lại từ đầu (Scrape from scratch)
+Để tiến hành cào lại từ đầu toàn bộ dữ liệu trên website Nhà thuốc Long Châu, bạn cần thực hiện các bước dọn dẹp dữ liệu cũ, cài đặt môi trường và điều chỉnh lại file cấu hình `.env` như sau:
+
+### 13.1. Chuẩn bị môi trường & Cài đặt lại (Installation)
+Nếu bạn chạy trên một máy mới hoặc muốn cài đặt sạch lại toàn bộ thư viện:
+- Đảm bảo máy đã cài đặt Node.js (Khuyến nghị phiên bản 18 trở lên).
+- Mở Terminal (Command Prompt, PowerShell hoặc Git Bash) và di chuyển vào thư mục `data-collector`:
+  ```bash
+  cd d:\Downloads\tools\tools\data-collector
+  ```
+- Cài đặt các thư viện phụ thuộc:
+  ```bash
+  npm install
+  ```
+- Cài đặt môi trường trình duyệt Chromium của Playwright (bắt buộc để chạy công cụ cào):
+  ```bash
+  npm run install:browser
+  ```
+
+### 13.2. Dọn dẹp dữ liệu cũ (Cleanup)
+Để đảm bảo không bị lẫn dữ liệu cũ và tiến trình không nhận nhầm các checkpoint đã hoàn thành trước đó, bạn cần xóa bỏ các thư mục trạng thái và dữ liệu cũ.
+
+Tùy vào Terminal bạn đang sử dụng trên Windows, hãy chạy các lệnh sau:
+
+- **Nếu sử dụng PowerShell:**
+  ```powershell
+  Remove-Item -Recurse -Force data/raw/products, data/state, data/normalized, data/output -ErrorAction Ignore
+  Remove-Item -Force data/raw/product_links.raw.json, data/raw/categories.raw.json -ErrorAction Ignore
+  New-Item -ItemType Directory -Force data/raw/products, data/state, data/normalized, data/output, data/output/sql
+  ```
+- **Nếu sử dụng Command Prompt (cmd):**
+  ```cmd
+  rmdir /s /q data\raw\products
+  rmdir /s /q data\state
+  rmdir /s /q data\normalized
+  rmdir /s /q data\output
+  del data\raw\product_links.raw.json
+  del data\raw\categories.raw.json
+  mkdir data\raw\products
+  mkdir data\state
+  mkdir data\normalized
+  mkdir data\output
+  mkdir data\output\sql
+  ```
+- **Nếu sử dụng Git Bash / WSL:**
+  ```bash
+  rm -rf data/raw/products data/state data/normalized data/output data/raw/product_links.raw.json data/raw/categories.raw.json
+  mkdir -p data/raw/products data/state data/normalized data/output data/output/sql
+  ```
+
+### 13.3. Cấu hình file `.env`
+Mở file `.env` và cập nhật lại các tham số quan trọng sau:
+- **`RESUME=false`**: Thiết lập thành `false` ở lần chạy đầu tiên để vô hiệu hóa việc đọc trạng thái cũ. (Sau khi hệ thống bắt đầu chạy và nếu bị gián đoạn, bạn có thể chuyển lại thành `true` để tiếp tục cào tiếp từ điểm dừng chân trước đó).
+- **`CRAWL_MODE=full`**: Thiết lập thành `full` để thu thập toàn bộ dữ liệu (nếu chọn `sample`, công cụ chỉ cào thử nghiệm giới hạn số sản phẩm trong biến `MAX_PRODUCTS`).
+- **`HEADLESS=false`**: Khuyến nghị thiết lập thành `false` khi chạy từ đầu. Việc này sẽ mở cửa sổ trình duyệt Chromium hiển thị trực quan giúp bạn dễ dàng theo dõi và xử lý thủ công (như vượt Cloudflare Captcha) nếu IP của bạn bị nghi ngờ.
+- **`REQUEST_DELAY_RANDOM_MIN_MS=2000`** và **`REQUEST_DELAY_RANDOM_MAX_MS=5000`**: Giữ độ trễ ngẫu nhiên từ 2-5 giây giữa các request để tránh việc gửi yêu cầu quá dồn dập khiến IP của bạn bị khóa bởi Cloudflare WAF.
+
+### 13.4. Quy trình chạy các bước cào dữ liệu từ đầu
+Sau khi đã chuẩn bị xong, bạn chạy tuần tự các lệnh sau:
+
+- **Bước 1: Cào cấu trúc danh mục sản phẩm (Categories)**
+  ```bash
+  npm run collect:categories
+  ```
+  *Mục tiêu:* Tạo ra file chứa liên kết của các danh mục con `data/raw/categories.raw.json`.
+- **Bước 2: Thu thập danh sách liên kết sản phẩm (Product Links)**
+  ```bash
+  npm run collect:links
+  ```
+  *Mục tiêu:* Truy cập các danh mục, tự động cuộn trang (scroll) và nhấn nút "Xem thêm" để quét sạch liên kết sản phẩm lưu vào `data/raw/product_links.raw.json`.
+  *Lưu ý:* Nếu bị Cloudflare chặn, terminal sẽ cảnh báo phát hiện IP bị hạn chế. Bạn chỉ cần đổi IP mạng (ví dụ phát mạng 4G từ điện thoại di động) rồi nhấn `y` trên terminal để tiếp tục.
+- **Bước 3: Thu thập thông tin chi tiết từng sản phẩm (Product Details)**
+  ```bash
+  npm run collect:details:full
+  ```
+  *Mục tiêu:* Mở từng link sản phẩm để lấy thông tin chi tiết (tên, thành phần, giá, nhà sản xuất, hướng dẫn sử dụng...) và lưu thành các lô JSON trong thư mục `data/raw/products/`.
+- **Bước 4: Cào lại các sản phẩm bị lỗi mạng (Retry Failed - Tùy chọn)**
+  ```bash
+  npm run retry:failed
+  ```
+  *Mục tiêu:* Tự động cào lại các URL sản phẩm nằm trong danh sách lỗi `failed_urls.json`.
+- **Bước 5: Chuẩn hóa dữ liệu thô sang CSV (Normalize)**
+  ```bash
+  npm run normalize
+  ```
+  *Mục tiêu:* Chuyển đổi dữ liệu JSON thô đã cào thành 15 file CSV chuẩn hóa dạng bảng RDBMS đặt tại `data/normalized/`.
+- **Bước 6: Kiểm tra chất lượng dữ liệu (Validate)**
+  ```bash
+  npm run validate:data
+  ```
+  *Mục tiêu:* Xuất báo cáo chất lượng dữ liệu Markdown tại `data/output/data_quality_report.md` để kiểm tra độ toàn vẹn của dữ liệu CSV.
+- **Bước 7: Sinh SQL Seed Script (Generate SQL)**
+  ```bash
+  npm run generate:sql
+  ```
+  *Mục tiêu:* Tạo các tệp SQL script (`seed_longchau_demo.sql` và các batch SQL) để sẵn sàng import dữ liệu trực tiếp vào cơ sở dữ liệu Supabase/PostgreSQL.
+
+## 14. Disclaimer y tế
 > **“Thông tin thuốc, cách dùng, liều dùng, tương tác thuốc và khuyến nghị chỉ là dữ liệu tham khảo phục vụ đồ án, không thay thế tư vấn của dược sĩ, bác sĩ hoặc chuyên gia y tế.”**

@@ -18,30 +18,30 @@
     "enabled": true
   },
   {
-    "categoryCode": "CAT_TBYT",
-    "categoryName": "Trang thiết bị y tế",
-    "url": "https://nhathuoclongchau.com.vn/trang-thiet-bi-y-te",
-    "priority": 3,
-    "estimatedProducts": 650,
-    "maxProducts": 650,
-    "enabled": true
-  },
-  {
     "categoryCode": "CAT_DUOC_MY_PHAM",
     "categoryName": "Dược mỹ phẩm",
     "url": "https://nhathuoclongchau.com.vn/duoc-my-pham",
-    "priority": 4,
-    "estimatedProducts": 500,
-    "maxProducts": 500,
+    "priority": 3,
+    "estimatedProducts": 550,
+    "maxProducts": 550,
     "enabled": true
   },
   {
     "categoryCode": "CAT_CHAM_SOC_CA_NHAN",
     "categoryName": "Chăm sóc cá nhân",
     "url": "https://nhathuoclongchau.com.vn/cham-soc-ca-nhan",
-    "priority": 5,
+    "priority": 4,
     "estimatedProducts": 300,
     "maxProducts": 300,
+    "enabled": true
+  },
+  {
+    "categoryCode": "CAT_TBYT",
+    "categoryName": "Trang thiết bị y tế",
+    "url": "https://nhathuoclongchau.com.vn/trang-thiet-bi-y-te",
+    "priority": 5,
+    "estimatedProducts": 700,
+    "maxProducts": 700,
     "enabled": true
   }
 ]
