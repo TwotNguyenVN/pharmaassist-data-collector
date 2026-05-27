@@ -69,13 +69,80 @@ Cách này cho phép bạn tiếp tục sử dụng Command Prompt hoặc PowerS
 
 
 ## 5. Quy trình chạy full
-Thu thập dữ liệu đầy đủ từ nguồn Nhà thuốc Long Châu:
-- `npm run collect:links`: Thu thập danh sách link sản phẩm từ tất cả danh mục.
-- `npm run collect:details:full`: Thu thập chi tiết toàn bộ các sản phẩm từ danh sách link.
-- `npm run retry:failed`: Thử lại các sản phẩm bị lỗi trong quá trình thu thập chi tiết.
-- `npm run normalize`: Chuẩn hóa toàn bộ dữ liệu thô sang các file CSV.
-- `npm run validate:data`: Kiểm tra chất lượng dữ liệu CSV đã chuẩn hóa.
-- `npm run generate:sql`: Sinh script SQL seed từ dữ liệu CSV để sẵn sàng import.
+Để bắt đầu chạy cào toàn bộ dữ liệu (Full) từ đầu bằng công cụ đã được tối ưu hóa qua API mới, bạn thực hiện theo các bước sau:
+
+### Bước 1: Dừng tiến trình cũ (nếu có)
+Nếu terminal của bạn đang chạy lệnh cũ (ví dụ `npm run collect:links` kiểu cuộn chuột cũ), hãy nhấn tổ hợp phím `Ctrl + C` trong Terminal để dừng hẳn tiến trình đó lại.
+
+### Bước 2: Dọn dẹp dữ liệu cũ (Xóa trạng thái cũ)
+Để tránh bị lẫn dữ liệu mẫu (sample) vừa cào thử và bắt đầu cào sạch từ đầu, hãy chạy lệnh dọn dẹp tương ứng với Terminal của bạn:
+
+- **Nếu dùng PowerShell:**
+  ```powershell
+  Remove-Item -Recurse -Force data/raw/products, data/state, data/normalized, data/output -ErrorAction Ignore
+  Remove-Item -Force data/raw/product_links.raw.json -ErrorAction Ignore
+  New-Item -ItemType Directory -Force data/raw/products, data/state, data/normalized, data/output, data/output/sql
+  ```
+- **Nếu dùng Command Prompt (cmd):**
+  ```cmd
+  rmdir /s /q data\raw\products
+  rmdir /s /q data\state
+  rmdir /s /q data\normalized
+  rmdir /s /q data\output
+  del data\raw\product_links.raw.json
+  mkdir data\raw\products
+  mkdir data\state
+  mkdir data\normalized
+  mkdir data\output
+  mkdir data\output\sql
+  ```
+- **Nếu dùng Git Bash / WSL:**
+  ```bash
+  rm -rf data/raw/products data/state data/normalized data/output data/raw/product_links.raw.json
+  mkdir -p data/raw/products data/state data/normalized data/output data/output/sql
+  ```
+
+### Bước 3: Kiểm tra cấu hình file `.env`
+Mở file `.env` và đảm bảo các tham số sau đã được đặt chính xác:
+```env
+CRAWL_MODE=full
+RESUME=false   # Đặt là false ở lần chạy đầu tiên để quét sạch từ đầu
+HEADLESS=true  # Có thể đặt là true để ẩn trình duyệt chạy ngầm cho nhanh và nhẹ máy
+```
+*(Sau khi tiến trình cào đã bắt đầu chạy, nếu gặp sự cố mạng hoặc bị dừng giữa chừng, bạn chỉ cần sửa `RESUME=true` và chạy lại lệnh cào để tiếp tục cào tiếp từ trang đang dở dang).*
+
+### Bước 4: Chạy quy trình cào dữ liệu Full
+- **Thu thập danh sách liên kết sản phẩm (Product Links):**
+  ```bash
+  npm run collect:links
+  ```
+  Lệnh này sẽ sử dụng API mới phân trang siêu tốc. Thời gian cào hàng ngàn sản phẩm sẽ được rút ngắn xuống chỉ còn vài phút thay vì hàng tiếng đồng hồ như trước.
+
+- **Thu thập thông tin chi tiết từng sản phẩm (Product Details):**
+  ```bash
+  npm run collect:details:full
+  ```
+  Tool sẽ truy cập vào từng link sản phẩm đã quét được ở trên để lấy thông tin chi tiết (thành phần, hình ảnh, hướng dẫn sử dụng, giá...) và lưu vào thư mục `data/raw/products/`.
+
+- **Cào lại sản phẩm lỗi (nếu có):**
+  ```bash
+  npm run retry:failed
+  ```
+
+- **Chuẩn hóa dữ liệu sang CSV (Normalize):**
+  ```bash
+  npm run normalize
+  ```
+
+- **Kiểm tra chất lượng dữ liệu (Validate):**
+  ```bash
+  npm run validate:data
+  ```
+
+- **Sinh script SQL Seed để nạp vào DB (Generate SQL):**
+  ```bash
+  npm run generate:sql
+  ```
 
 ## 6. Retry failed
 Khi tiến trình cào dữ liệu gặp lỗi mạng hoặc timeout đối với một số sản phẩm, sử dụng lệnh sau để chạy lại:

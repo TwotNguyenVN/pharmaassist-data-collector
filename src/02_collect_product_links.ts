@@ -126,126 +126,171 @@ interface ProductLinkRaw {
   collected_at: string;
 }
 
-async function autoScrollAndLoadMore(page: Page, maxScrolls: number, maxClicks: number) {
-  let scrollCount = 0;
-  let clickCount = 0;
-  let lastHeight = await page.evaluate(() => document.body.scrollHeight);
+async function fetchCategoryProductsViaApi(
+  page: Page, 
+  cat: CategoryRaw, 
+  baseUrl: string,
+  minDelay: number,
+  maxDelay: number,
+  mode: string,
+  maxProducts: number,
+  uniqueLinks: Map<string, ProductLinkRaw>,
+  duplicateUrls: string[]
+): Promise<{ success: boolean; newLinksCount: number; errorReason?: string }> {
+  const catPath = new URL(cat.category_url).pathname;
+  const cleanCatSlug = catPath.replace(/^\//, '');
   
-  while (scrollCount < maxScrolls) {
-    // Scroll down 80% of window height
-    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 0.8));
-    await delay(600);
-    
-    // Attempt to click "Load More" / "Xem thêm"
+  const checkpointPath = path.join(ROOT_DIR, 'data/state/links_checkpoint.json');
+  let checkpoints: Record<string, { skipCount: number }> = {};
+  if (fs.existsSync(checkpointPath)) {
     try {
-      const buttons = await page.locator('button').filter({ hasText: /xem thêm|tải thêm|hiển thị thêm/i }).all();
-      for (const btn of buttons) {
-        if (await btn.isVisible() && clickCount < maxClicks) {
-          // Hover before clicking to mimic real user behavior and prevent anti-bot trigger
-          await btn.hover({ timeout: 2000 }).catch(() => {});
-          
-          // Fast random delay before clicking (300ms - 800ms)
-          const preClickDelay = Math.floor(Math.random() * 500) + 300;
-          await delay(preClickDelay);
-          
-          await btn.click({ force: false }).catch(async () => {
-            // Fallback to force click if standard click is intercepted
-            await btn.click({ force: true }).catch(() => {});
-          });
-          
-          clickCount++;
-          
-          // Fast random delay after click for products to render (1500ms - 2500ms)
-          const postClickDelay = Math.floor(Math.random() * 1000) + 1500;
-          await delay(postClickDelay);
-          break; 
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    const newHeight = await page.evaluate(() => document.body.scrollHeight);
-    if (newHeight === lastHeight) {
-      await delay(1000);
-      if (await page.evaluate(() => document.body.scrollHeight) === lastHeight) {
-         break; // Reached bottom
-      }
-    }
-    lastHeight = newHeight;
-    scrollCount++;
+      checkpoints = JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
+    } catch (e) {}
   }
-}
-
-async function extractProductLinks(page: Page, cat: CategoryRaw, baseUrl: string): Promise<ProductLinkRaw[]> {
-  const collectedAt = new Date().toISOString();
   
-  const links = await page.evaluate(({ cat, baseUrl, collectedAt }) => {
-    const results: any[] = [];
-    const anchors = Array.from(document.querySelectorAll('a'));
-    
-    for (const a of anchors) {
-      const href = a.getAttribute('href');
-      if (!href || href.startsWith('javascript:')) continue;
+  let skipCount = 0;
+  if (process.env.RESUME !== 'false' && checkpoints[cat.category_code]) {
+    skipCount = checkpoints[cat.category_code].skipCount;
+    logInfo(`Resuming category ${cat.category_name} from skipCount: ${skipCount}`);
+  }
+  
+  const apiBatchSize = 50;
+  let hasMore = true;
+  let newLinksCount = 0;
+  let consecutiveErrors = 0;
+
+  const currentUrl = page.url();
+  if (!currentUrl.startsWith('https://nhathuoclongchau.com.vn')) {
+    await page.goto('https://nhathuoclongchau.com.vn/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  }
+
+  while (hasMore) {
+    if (mode === 'sample' && uniqueLinks.size >= maxProducts) {
+      logInfo(`Reached MAX_PRODUCTS (${maxProducts}) in sample mode. Stopping early.`);
+      break;
+    }
+
+    logInfo(`Fetching products for category "${cat.category_name}" - skipCount: ${skipCount}...`);
+
+    const result = await page.evaluate(async ({ cleanCatSlug, skipCount, apiBatchSize }) => {
+      const url = 'https://api.nhathuoclongchau.com.vn/lccus/search-product-service/api/products/ecom/product/search/cate';
+      const payload = {
+        skipCount,
+        maxResultCount: apiBatchSize,
+        codes: ["productTypes", "priceRanges", "brand", "brandOrigin", "producer"],
+        sortType: 4,
+        category: [cleanCatSlug]
+      };
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          return { error: `HTTP ${res.status} ${res.statusText}` };
+        }
+        const data = await res.json();
+        return { success: true, data };
+      } catch (err: any) {
+        return { error: err.message };
+      }
+    }, { cleanCatSlug, skipCount, apiBatchSize });
+
+    if (result.error) {
+      logError(`Failed to fetch API: ${result.error}`);
+      consecutiveErrors++;
+      if (consecutiveErrors >= 3) {
+        return { success: false, newLinksCount, errorReason: result.error };
+      }
+      await delay(5000);
+      continue;
+    }
+
+    consecutiveErrors = 0;
+    const products = result.data?.products || [];
+    logInfo(`API returned ${products.length} products.`);
+
+    if (products.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    const collectedAt = new Date().toISOString();
+    let pageNewCount = 0;
+
+    for (const prod of products) {
+      if (!prod.slug) continue;
       
-      let fullUrl = href;
-      if (!href.startsWith('http')) {
-        if (!href.startsWith('/')) fullUrl = '/' + href;
-        fullUrl = baseUrl + fullUrl;
+      let productUrl = prod.slug;
+      if (!productUrl.startsWith('http')) {
+        if (!productUrl.startsWith('/')) productUrl = '/' + productUrl;
+        productUrl = baseUrl + productUrl;
       }
       
-      // Clean query and hash first
-      const cleanedUrl = fullUrl.split('?')[0].split('#')[0];
+      const cleanedUrl = productUrl.split('?')[0].split('#')[0];
       
-      try {
-        const path = new URL(cleanedUrl).pathname;
-        const isValidSegment = /^\/(thuoc|thuc-pham-chuc-nang|trang-thiet-bi-y-te|duoc-my-pham|cham-soc-ca-nhan)\//.test(path);
-        const isBlacklisted = /\/(chinh-sach|tin-tuc|he-thong-cua-hang|khuyen-mai|tuyen-dung|lien-he)\//.test(path);
+      let priceText = null;
+      if (prod.price && typeof prod.price.price === 'number') {
+        const amount = prod.price.price.toLocaleString('vi-VN') + 'đ';
+        const unit = prod.price.measureUnitName || '';
+        priceText = unit ? `${amount} / ${unit}` : amount;
+      }
 
-        if (cleanedUrl.startsWith(baseUrl) && isValidSegment && !isBlacklisted && (cleanedUrl.includes('.html') || cleanedUrl.match(/-\d+$/))) {
-          let name = a.textContent?.replace(/\s+/g, ' ').trim() || '';
-          if (name.toLowerCase() === 'xem thêm' || name.toLowerCase() === 'chi tiết') {
-             name = a.getAttribute('title') || '';
-          }
+      const linkItem: ProductLinkRaw = {
+        category_code: cat.category_code,
+        category_name: cat.category_name,
+        category_url: cat.category_url,
+        product_name: prod.webName || prod.name || null,
+        product_url: cleanedUrl,
+        image_url: prod.image || null,
+        price_text: priceText,
+        collected_at: collectedAt
+      };
 
-          const img = a.querySelector('img');
-          const imageUrl = img ? (img.getAttribute('src') || img.getAttribute('data-src')) : null;
-
-          let priceText = null;
-          let parent: HTMLElement | null = a.parentElement;
-          let depth = 0;
-          while (parent && depth < 3) {
-             const textNodes = Array.from(parent.querySelectorAll('*')).map(el => el.textContent || '');
-             const priceEl = textNodes.find(t => (t.includes('đ') || t.includes('₫') || t.includes('VNĐ')) && t.match(/\d/));
-             if (priceEl) {
-               priceText = priceEl.replace(/\s+/g, ' ').trim();
-               break;
-             }
-             parent = parent.parentElement;
-             depth++;
-          }
-
-          if (name.length > 3 || cleanedUrl) {
-            results.push({
-              category_code: cat.category_code,
-              category_name: cat.category_name,
-              category_url: cat.category_url,
-              product_name: name.length > 0 ? name : null,
-              product_url: cleanedUrl,
-              image_url: imageUrl,
-              price_text: priceText,
-              collected_at: collectedAt
-            });
-          }
-        }
-      } catch (urlErr) {
-        // Skip invalid URL formats
+      if (uniqueLinks.has(cleanedUrl)) {
+        duplicateUrls.push(cleanedUrl);
+      } else {
+        uniqueLinks.set(cleanedUrl, linkItem);
+        newLinksCount++;
+        pageNewCount++;
       }
     }
-    return results;
-  }, { cat, baseUrl, collectedAt });
-  
-  return links;
+
+    logInfo(`Processed page: Found ${products.length} links (${pageNewCount} new). Total unique: ${uniqueLinks.size}`);
+
+    skipCount += products.length;
+
+    if (process.env.RESUME !== 'false') {
+      checkpoints[cat.category_code] = { skipCount };
+      try {
+        fs.writeFileSync(checkpointPath, JSON.stringify(checkpoints, null, 2), 'utf-8');
+      } catch (e) {}
+      
+      const outLinksPath = path.join(ROOT_DIR, 'data/raw/product_links.raw.json');
+      try {
+        fs.writeFileSync(outLinksPath, JSON.stringify(Array.from(uniqueLinks.values()), null, 2), 'utf-8');
+      } catch (e) {}
+    }
+
+    if (products.length < apiBatchSize) {
+      hasMore = false;
+      break;
+    }
+
+    await randomDelay(minDelay, maxDelay);
+  }
+
+  if (process.env.RESUME !== 'false' && !hasMore) {
+    delete checkpoints[cat.category_code];
+    try {
+      fs.writeFileSync(checkpointPath, JSON.stringify(checkpoints, null, 2), 'utf-8');
+    } catch (e) {}
+  }
+
+  return { success: true, newLinksCount };
 }
 
 async function main(): Promise<void> {
@@ -257,11 +302,6 @@ async function main(): Promise<void> {
   const mode = process.env.CRAWL_MODE ?? 'sample';
   const maxProducts = parseInt(process.env.MAX_PRODUCTS ?? '200', 10);
   
-  const defaultScroll = mode === 'sample' ? '3' : '30';
-  const defaultLoadMore = mode === 'sample' ? '0' : '30';
-  const maxScrollRounds = parseInt(process.env.MAX_SCROLL_ROUNDS ?? defaultScroll, 10);
-  const maxLoadMore = parseInt(process.env.MAX_LOAD_MORE_CLICKS ?? defaultLoadMore, 10);
-
   const rawCategoriesPath = path.join(ROOT_DIR, 'data/raw/categories.raw.json');
   const urlsPath = path.join(ROOT_DIR, 'category_urls.json');
   
@@ -285,14 +325,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Filter: If a category has children in the dataset, skip it (prioritize leaf categories)
   const parentCodes = new Set(allCats.map(c => c.parent_category_code).filter(Boolean));
   let toCrawl = allCats.filter(cat => !parentCodes.has(cat.category_code));
 
-  // Skip alphabetical A-Z search pages (they don't contain direct product grids and cause duplicate issues)
   toCrawl = toCrawl.filter(cat => !cat.category_url.includes('/tra-cuu-thuoc'));
 
-  // Sync with enabled configurations in category_urls.json
   function getRootCode(code: string): string {
     if (code.startsWith('CAT_THUOC')) return 'CAT_THUOC';
     if (code.startsWith('CAT_TPCN')) return 'CAT_TPCN';
@@ -357,81 +394,32 @@ async function main(): Promise<void> {
     logInfo(`Crawling category: ${cat.category_name} (${cat.category_url})`);
     
     try {
-      await page.goto(cat.category_url, { waitUntil: 'networkidle', timeout: 30000 });
-      
       const baseUrl = new URL(cat.category_url).origin;
-      await autoScrollAndLoadMore(page, maxScrollRounds, maxLoadMore);
+      let success = false;
       
-      let extracted = await extractProductLinks(page, cat, baseUrl);
-      
-      let isBlocked = isCloudflareBlocked(extracted);
-      if (isBlocked) {
-        logWarn(`\n================================================================================`);
-        logWarn(`[WARNING] CLOUDFLARE RATE LIMIT DETECTED!`);
-        logWarn(`Category "${cat.category_name}" returned only static advertising links.`);
-        logWarn(`Your IP is currently blocked/rate-limited by Cloudflare WAF.`);
-        logWarn(`--------------------------------------------------------------------------------`);
-        logWarn(`ACTION REQUIRED: Please reset your IP now (e.g. toggle Airplane mode on/off on your 4G device).`);
-        logWarn(`================================================================================\n`);
+      while (!success) {
+        const runResult = await fetchCategoryProductsViaApi(
+          page, cat, baseUrl, minDelay, maxDelay, mode, maxProducts, uniqueLinks, duplicateUrls
+        );
         
-        let ipResetDone = false;
-        while (!ipResetDone) {
+        if (runResult.success) {
+          success = true;
+          consecutiveNoNewLinks = runResult.newLinksCount === 0 ? (consecutiveNoNewLinks + 1) : 0;
+        } else {
+          const errorReason = runResult.errorReason || 'Unknown error';
+          logWarn(`\n================================================================================`);
+          logWarn(`[WARNING] CRAWL ERROR / CLOUDFLARE BLOCK DETECTED!`);
+          logWarn(`Category "${cat.category_name}" failed: ${errorReason}`);
+          logWarn(`--------------------------------------------------------------------------------`);
+          logWarn(`ACTION REQUIRED: Please reset your IP now (e.g. toggle Airplane mode on/off on your 4G device).`);
+          logWarn(`================================================================================\n`);
+          
           const proceed = await askToContinue(`Have you reset your IP? Press 'y' (or Enter) to retry, or 'n' to skip: `);
-          if (proceed) {
-            logInfo(`Retrying category: ${cat.category_name}...`);
-            await page.goto(cat.category_url, { waitUntil: 'networkidle', timeout: 30000 });
-            await autoScrollAndLoadMore(page, maxScrollRounds, maxLoadMore);
-            extracted = await extractProductLinks(page, cat, baseUrl);
-            
-            if (!isCloudflareBlocked(extracted)) {
-              let retryNewCount = 0;
-              for (const link of extracted) {
-                if (uniqueLinks.has(link.product_url)) {
-                  duplicateUrls.push(link.product_url);
-                } else {
-                  uniqueLinks.set(link.product_url, link);
-                  retryNewCount++;
-                }
-              }
-              logInfo(`Retry successful! Found ${extracted.length} links (${retryNewCount} new). Total unique: ${uniqueLinks.size}`);
-              ipResetDone = true;
-              consecutiveNoNewLinks = 0;
-              break;
-            } else {
-              logWarn(`Retry failed. Still getting static footer links. Cloudflare is still blocking this IP.`);
-            }
-          } else {
+          if (!proceed) {
             logWarn(`Skipping retry for category: ${cat.category_name}.`);
-            // Add what we currently have (the static links) to avoid losing them
-            for (const link of extracted) {
-              if (uniqueLinks.has(link.product_url)) {
-                duplicateUrls.push(link.product_url);
-              } else {
-                uniqueLinks.set(link.product_url, link);
-              }
-            }
-            ipResetDone = true;
-            consecutiveNoNewLinks++;
+            errorCount++;
             break;
           }
-        }
-      } else {
-        let newCount = 0;
-        for (const link of extracted) {
-          if (uniqueLinks.has(link.product_url)) {
-            duplicateUrls.push(link.product_url);
-          } else {
-            uniqueLinks.set(link.product_url, link);
-            newCount++;
-          }
-        }
-        
-        logInfo(`Found ${extracted.length} links (${newCount} new). Total unique: ${uniqueLinks.size}, Duplicates: ${duplicateUrls.length}`);
-        
-        if (newCount === 0) {
-          consecutiveNoNewLinks++;
-        } else {
-          consecutiveNoNewLinks = 0;
         }
       }
       
@@ -443,6 +431,7 @@ async function main(): Promise<void> {
     logInfo(`Waiting for next category...`);
     await randomDelay(minDelay, maxDelay);
   }
+
 
   await browser.close();
 
