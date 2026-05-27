@@ -32,5 +32,3 @@ data/raw/product_links.raw.json
 # Keep categories config
 !category_urls.json
 
-# Exclude backup product link files
-data/raw/*.backup.json
