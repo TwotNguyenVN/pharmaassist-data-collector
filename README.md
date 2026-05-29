@@ -196,21 +196,35 @@ Tiến hành chạy lại quy trình Full Mode bắt đầu từ lệnh `npm run
 
 ---
 
-## 5. Cấu trúc dữ liệu đầu ra
+## 5. Cấu trúc thư mục & Luồng dữ liệu (Data Flow)
 
-Thư mục dữ liệu sau khi cào và chuẩn hóa thành công:
-```
-data-collector/
-├── data/
-│   ├── raw/                 # Dữ liệu thô JSON (chia theo từng nhóm sản phẩm)
-│   ├── normalized/          # 15 file dữ liệu quan hệ CSV (products.csv, brands.csv,...)
-│   ├── state/               # Checkpoint lưu trạng thái (completed_urls.json, failed_urls.json)
-│   └── output/
-│       ├── data_quality_report.md     # Báo cáo đánh giá chất lượng dữ liệu
-│       ├── seed_longchau_demo.sql     # File SQL seed tổng hợp cho PostgreSQL
-│       └── sql/                       # Các file SQL phân đoạn theo batch nhỏ
-└── logs/                    # Ghi nhận log chi tiết tiến trình cào và lỗi (errors.log)
-```
+Để dễ dàng theo dõi cách dữ liệu di chuyển từ lúc bắt đầu cấu hình cho đến khi tạo ra mã SQL seed, dưới đây là chi tiết các file và thư mục quan trọng nhất của công cụ:
+
+### 5.1. Các file cấu hình & đầu vào (Configuration & Input)
+* **`category_urls.json`**: 
+  * Tệp cấu hình chứa các danh mục gốc của Long Châu (như Thuốc, Thực phẩm chức năng, Dược mỹ phẩm...) làm hạt giống đầu vào. Bạn có thể bật (`"enabled": true`) hoặc tắt (`"enabled": false`) các danh mục này để giới hạn phạm vi cào.
+* **`.env.example`**:
+  * Tệp mẫu chứa tất cả các tham số môi trường (như chế độ cào, giới hạn số sản phẩm, độ trễ ngẫu nhiên, cấu hình Playwright). Bạn sao chép tệp này thành `.env` để chạy công cụ.
+
+### 5.2. Các thư mục dữ liệu phát sinh (Data Directories)
+Dữ liệu di chuyển tuần tự qua các thư mục sau trong quá trình cào:
+1. **`data/raw/`**:
+   * **Nhiệm vụ:** Nơi lưu trữ dữ liệu thô định dạng JSON thu thập trực tiếp từ website.
+   * **Bao gồm:** File danh mục quét được (`categories.raw.json`), danh sách liên kết sản phẩm (`product_links.raw.json`), và thông tin chi tiết từng sản phẩm được chia thành các lô nhỏ trong thư mục con `data/raw/products/`.
+2. **`data/state/`**:
+   * **Nhiệm vụ:** Lưu trữ trạng thái tạm thời (checkpoint) của các tiến trình cào để phục vụ cơ chế tiếp tục cào (Resume) khi gặp sự cố.
+   * **Bao gồm:** Checkpoint phân trang quét link (`links_checkpoint.json`), danh sách link cào chi tiết thành công (`completed_urls.json`), link bị lỗi (`failed_urls.json`), và các link trùng lặp (`duplicate_urls.json`).
+3. **`data/normalized/`**:
+   * **Nhiệm vụ:** Nơi chứa dữ liệu đã được làm sạch và chuẩn hóa sang dạng bảng quan hệ (RDBMS) định dạng CSV.
+   * **Bao gồm:** 15 tệp CSV tương ứng với cấu trúc 15 bảng cơ sở dữ liệu (ví dụ: `products.csv` chứa thông tin cơ bản, `product_prices.csv` chứa giá bán, `active_ingredients.csv` chứa danh sách hoạt chất, v.v.).
+4. **`data/output/sql/`**:
+   * **Nhiệm vụ:** Thư mục chứa các tệp mã lệnh SQL (`INSERT`) được phân mảnh theo các batch nhỏ (ví dụ 250 sản phẩm/file) từ dữ liệu CSV.
+   * **Ý nghĩa:** Việc chia nhỏ tệp SQL giúp bạn dễ dàng import dữ liệu vào Supabase PostgreSQL qua SQL Editor mà không sợ bị timeout do kích thước file quá lớn (như khi import file gộp `seed_longchau_demo.sql`).
+
+### 5.3. Thư mục Logs theo dõi
+* **`logs/`**:
+   * **Nhiệm vụ:** Chứa các tệp log ghi lại chi tiết mọi hoạt động của công cụ (`collect.log`) và báo cáo chi tiết các lỗi phát sinh khi chạy (`errors.log`). Thư mục này rất hữu dụng để debug và kiểm tra xem có URL nào bị timeout hay lỗi cấu trúc layout không.
+
 
 ---
 
