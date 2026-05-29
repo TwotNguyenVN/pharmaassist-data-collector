@@ -1,322 +1,212 @@
-# PharmaAssist Data Collector
+# 💊 PharmaAssist Data Collector
+
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg)](https://nodejs.org/)
+[![Playwright](https://img.shields.io/badge/playwright-%5E1.49.0-green.svg)](https://playwright.dev/)
+[![TypeScript](https://img.shields.io/badge/typescript-%5E5.7.0-blue.svg)](https://www.typescriptlang.org/)
+[![License: Private](https://img.shields.io/badge/License-Private-red.svg)](#)
+
+Bộ công cụ thu thập, xử lý và chuẩn hóa dữ liệu sản phẩm tham khảo từ website **Nhà thuốc Long Châu**. Dữ liệu sau khi xử lý sẽ được định dạng cấu trúc dạng quan hệ (CSV) và sẵn sàng sinh mã SQL để nạp dữ liệu demo cho đồ án **PharmaAssist**.
+
+---
+
+## 📌 Mục lục
+1. [Giới thiệu](#1-giới-thiệu)
+2. [Cài đặt](#2-cài-đặt)
+3. [Cấu hình .env](#3-cấu-hình-env)
+4. [Hướng dẫn sử dụng](#4-hướng-dẫn-sử-dụng)
+   - [Quy trình chạy thử nghiệm (Sample Mode)](#quy-trình-chạy-thử-nghiệm-sample-mode)
+   - [Quy trình chạy toàn bộ dữ liệu (Full Mode)](#quy-trình-chạy-toàn-bộ-dữ-liệu-full-mode)
+   - [Hướng dẫn cào lại sạch từ đầu (Scrape from Scratch)](#hướng-dẫn-cào-lại-sạch-từ-đầu-scrape-from-scratch)
+5. [Cấu trúc dữ liệu đầu ra](#5-cấu-trúc-dữ-liệu-đầu-ra)
+6. [Quy tắc an toàn và bảo mật](#6-quy-tắc-an-toàn-và-bảo-mật)
+7. [Xử lý sự cố (Troubleshooting)](#7-xử-lý-sự-cố-troubleshooting)
+8. [Disclaimer (Tuyên bố từ chối trách nhiệm)](#8-disclaimer-tuyên-bố-từ-chối-trách-nhiệm)
+
+---
 
 ## 1. Giới thiệu
-- Tool dùng để thu thập dữ liệu sản phẩm tham khảo từ Nhà thuốc Long Châu.
-- Tool chỉ phục vụ seed/demo data cho đồ án PharmaAssist.
-- Tool không phải runtime production.
-- Dữ liệu không dùng để tư vấn y tế thật.
+
+Công cụ được xây dựng nhằm thu thập tự động danh mục, sản phẩm, giá bán, hình ảnh và hoạt chất của các nhóm dược phẩm từ Long Châu. 
+
+### 🚀 Tính năng nổi bật
+* **Quét dữ liệu siêu tốc bằng API nội bộ:** Chuyển đổi từ cơ chế cuộn DOM truyền thống sang gọi API phân trang nội bộ của Long Châu, nâng hiệu suất quét liên kết lên gấp nhiều lần.
+* **Cơ chế Checkpoint & Resume thông minh:** Cho phép lưu trạng thái cào theo thời gian thực (đến từng trang danh mục). Nếu bị gián đoạn hoặc chặn IP, bạn chỉ cần cấu hình `RESUME=true` để cào tiếp tục từ vị trí dừng mà không phải cào lại từ đầu.
+* **Chuẩn hóa quan hệ RDBMS:** Tự động tách dữ liệu thô (JSON) thành **15 bảng dữ liệu quan hệ** (CSV) như bảng sản phẩm, giá bán, biến thể, hình ảnh, hoạt chất, v.v.
+* **Tự động sinh SQL Seed:** Chuyển đổi trực tiếp các file CSV đã kiểm tra tính toàn vẹn thành mã lệnh SQL (`INSERT`) tương thích với PostgreSQL / Supabase.
+
+---
 
 ## 2. Cài đặt
-Để cài đặt tool, di chuyển vào thư mục `tools/data-collector` và thực hiện các lệnh sau:
-- `npm install`
-- `npm run install:browser`
+
+Để cài đặt và chuẩn bị môi trường chạy công cụ, hãy di chuyển vào thư mục dự án và thực hiện các lệnh sau:
+
+1. **Di chuyển vào thư mục dự án:**
+   ```bash
+   cd tools/data-collector
+   ```
+
+2. **Cài đặt các gói phụ thuộc (Dependencies):**
+   ```bash
+   npm install
+   ```
+
+3. **Cài đặt trình duyệt ẩn cho Playwright (Chromium):**
+   ```bash
+   npm run install:browser
+   ```
+
+---
 
 ## 3. Cấu hình .env
-Sao chép cấu hình mẫu từ `.env.example` bằng lệnh:
+
+Sao chép tệp cấu hình mẫu từ `.env.example` để tạo file cấu hình cá nhân:
 ```bash
 cp .env.example .env
 ```
-Các tham số cấu hình bao gồm:
-- **`CRAWL_MODE`**: Chế độ thu thập dữ liệu (`sample` để thử nghiệm hoặc `full` để thu thập toàn bộ).
-- **`MAX_PRODUCTS`**: Giới hạn số lượng sản phẩm tối đa sẽ thu thập (chỉ áp dụng ở chế độ `sample`).
-- **`REQUEST_DELAY_RANDOM_MIN_MS`**: Thời gian chờ ngẫu nhiên tối thiểu giữa các request (mili-giây) để tránh bị chặn.
-- **`REQUEST_DELAY_RANDOM_MAX_MS`**: Thời gian chờ ngẫu nhiên tối đa giữa các request (mili-giây).
-- **`BATCH_SIZE`**: Số lượng sản phẩm ghi xuống file raw JSON sau mỗi lượt crawl chi tiết.
-- **`HEADLESS`**: Cấu hình ẩn (`true`) hoặc hiện (`false`) cửa sổ trình duyệt Chromium khi Playwright hoạt động.
-- **`RESUME`**: Tiếp tục crawl dựa trên trạng thái cũ (`true`) hoặc xóa trạng thái cũ chạy lại từ đầu (`false`).
-- **`RETRY_FAILED_LIMIT`**: Giới hạn số lần thử lại tối đa cho mỗi URL bị lỗi khi crawl.
-- **`SOURCE_NAME`**: Tên nguồn dữ liệu dùng để ghi nhận log và nguồn gốc dữ liệu (mặc định: `Nhà thuốc Long Châu`).
-- **`SOURCE_NOTE`**: Chú thích hoặc ghi chú thêm cho nguồn dữ liệu (mặc định: `Dữ liệu tham khảo phục vụ đồ án PharmaAssist`).
 
-## 4. Quy trình chạy sample
-Chạy thử nghiệm với số lượng sản phẩm nhỏ để kiểm định selector và cấu trúc output dữ liệu. Có thể chạy từng bước:
-- `npm run collect:links`: Lấy danh sách link sản phẩm.
-- `npm run collect:details:sample`: Thu thập chi tiết sản phẩm (chạy theo số lượng giới hạn của `MAX_PRODUCTS`).
-- `npm run normalize`: Chuẩn hóa dữ liệu thô sang định dạng CSV.
-- `npm run validate:data`: Kiểm tra chất lượng và độ toàn vẹn của dữ liệu CSV đã chuẩn hóa.
-- `npm run generate:sql`: Sinh script SQL seed từ dữ liệu CSV để import vào database.
+Mở file `.env` và điều chỉnh các tham số cấu hình tùy theo nhu cầu:
 
-Hoặc chạy toàn bộ quy trình sample (sạch dữ liệu cũ) bằng một lệnh duy nhất:
+| Biến cấu hình | Giá trị mặc định | Giải thích |
+| :--- | :--- | :--- |
+| **`CRAWL_MODE`** | `sample` | Chế độ chạy: `sample` (chạy thử nghiệm số lượng nhỏ) hoặc `full` (quét toàn bộ). |
+| **`MAX_PRODUCTS`** | `8000` | Giới hạn số lượng sản phẩm tối đa sẽ thu thập (chỉ áp dụng ở chế độ `sample`). |
+| **`REQUEST_DELAY_RANDOM_MIN_MS`** | `2000` | Thời gian chờ ngẫu nhiên tối thiểu (ms) giữa các request để tránh bị chặn. |
+| **`REQUEST_DELAY_RANDOM_MAX_MS`** | `5000` | Thời gian chờ ngẫu nhiên tối đa (ms) giữa các request. |
+| **`BATCH_SIZE`** | `50` | Số lượng sản phẩm ghi xuống file raw JSON sau mỗi lượt cào chi tiết. |
+| **`HEADLESS`** | `false` | `true` để chạy ngầm trình duyệt, `false` để hiển thị trình duyệt Chromium khi cào. |
+| **`RESUME`** | `true` | Tiếp tục cào dựa trên trạng thái checkpoint cũ (`true`) hoặc xóa bỏ chạy lại (`false`). |
+| **`RETRY_FAILED_LIMIT`** | `3` | Số lần thử lại tối đa cho mỗi URL bị lỗi khi cào chi tiết. |
+
+---
+
+## 4. Hướng dẫn sử dụng
+
+### Quy trình chạy thử nghiệm (Sample Mode)
+Quy trình chạy thử với số lượng sản phẩm nhỏ để kiểm định cấu trúc dữ liệu đầu ra. Bạn có thể chạy từng bước:
+1. Thu thập liên kết sản phẩm: `npm run collect:links`
+2. Thu thập chi tiết mẫu: `npm run collect:details:sample`
+3. Chuẩn hóa dữ liệu sang CSV: `npm run normalize`
+4. Kiểm tra tính hợp lệ của CSV: `npm run validate:data`
+5. Tạo file SQL Seed: `npm run generate:sql`
+
+*Hoặc chạy toàn bộ quy trình bằng lệnh gộp duy nhất (Tự động dọn sạch dữ liệu cũ):*
 ```bash
 npm run pipeline:sample:clean
 ```
 
-### 💡 Hướng dẫn chạy trên hệ điều hành Windows
-Đối với máy chạy Windows, lệnh `npm run pipeline:sample:clean` có thể bị lỗi do Command Prompt hoặc PowerShell mặc định không hỗ trợ các lệnh shell của Linux (`rm`, `mkdir`). Bạn có thể chạy theo một trong các cách sau:
+> [!TIP]
+> **Hướng dẫn chạy lệnh gộp trên Windows:**
+> Mặc định lệnh gộp chạy script shell Linux `.sh`. Bạn có thể cấu hình npm sử dụng Git Bash làm Shell mặc định trên Windows bằng lệnh:
+> ```bash
+> npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+> ```
+> Sau đó có thể thoải mái chạy `npm run pipeline:sample:clean` trên Command Prompt hoặc PowerShell.
 
-#### Cách 1: Chạy trực tiếp qua Git Bash hoặc WSL
-Mở **Git Bash** hoặc **WSL (Windows Subsystem for Linux)**, di chuyển vào thư mục `tools/data-collector` và chạy trực tiếp script:
-```bash
-bash scripts/run_sample_pipeline.sh
-```
+---
 
-#### Cách 2: Cấu hình npm sử dụng Git Bash làm Shell mặc định
-Cách này cho phép bạn tiếp tục sử dụng Command Prompt hoặc PowerShell thông thường để chạy lệnh `npm run pipeline:sample:clean`.
-1. Mở Command Prompt hoặc PowerShell và chạy lệnh cấu hình sau (điều chỉnh đường dẫn đến file `bash.exe` của Git trên máy của bạn nếu khác):
+### Quy trình chạy toàn bộ dữ liệu (Full Mode)
+Quy trình thu thập toàn bộ dữ liệu từ nguồn Nhà thuốc Long Châu:
+
+1. **Thu thập danh sách liên kết sản phẩm:**
    ```bash
-   npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+   npm run collect:links
    ```
-2. Sau khi chạy cấu hình trên, bạn có thể chạy lệnh gộp trực tiếp ở bất kỳ terminal nào trên Windows:
+   *Lệnh này sẽ sử dụng API mới phân trang siêu tốc để quét hàng ngàn sản phẩm chỉ trong vài phút.*
+
+2. **Thu thập chi tiết toàn bộ sản phẩm:**
    ```bash
-   npm run pipeline:sample:clean
+   npm run collect:details:full
    ```
-3. *(Tùy chọn)* Nếu muốn hoàn tác (reset) npm shell về mặc định sau này, chạy:
+   *Truy cập từng sản phẩm để lấy thông tin chi tiết (thành phần, hình ảnh, đơn vị tính, hướng dẫn sử dụng...).*
+
+3. **Cào lại các sản phẩm lỗi (nếu có):**
    ```bash
-   npm config delete script-shell
+   npm run retry:failed
    ```
 
-*Lưu ý: File script `.sh` đã được cấu hình `.gitattributes` bắt buộc định dạng xuống dòng LF (Unix-style) để tránh lỗi cú pháp `\r: command not found` khi chạy bằng Git Bash trên Windows.*
+4. **Chuẩn hóa dữ liệu thô sang CSV:**
+   ```bash
+   npm run normalize
+   ```
 
+5. **Kiểm định dữ liệu đầu ra:**
+   ```bash
+   npm run validate:data
+   ```
 
-## 5. Quy trình chạy full
-Để bắt đầu chạy cào toàn bộ dữ liệu (Full) từ đầu bằng công cụ đã được tối ưu hóa qua API mới, bạn thực hiện theo các bước sau:
+6. **Sinh mã SQL Seed:**
+   ```bash
+   npm run generate:sql
+   ```
 
-### Bước 1: Dừng tiến trình cũ (nếu có)
-Nếu terminal của bạn đang chạy lệnh cũ (ví dụ `npm run collect:links` kiểu cuộn chuột cũ), hãy nhấn tổ hợp phím `Ctrl + C` trong Terminal để dừng hẳn tiến trình đó lại.
+---
 
-### Bước 2: Dọn dẹp dữ liệu cũ (Xóa trạng thái cũ)
-Để tránh bị lẫn dữ liệu mẫu (sample) vừa cào thử và bắt đầu cào sạch từ đầu, hãy chạy lệnh dọn dẹp tương ứng với Terminal của bạn:
+### Hướng dẫn cào lại sạch từ đầu (Scrape from Scratch)
+Khi bạn muốn bỏ qua toàn bộ checkpoint cũ, làm sạch bộ nhớ đệm và cào lại tất cả từ trang đầu tiên:
 
-- **Nếu dùng PowerShell:**
-  ```powershell
-  Remove-Item -Recurse -Force data/raw/products, data/state, data/normalized, data/output -ErrorAction Ignore
-  Remove-Item -Force data/raw/product_links.raw.json -ErrorAction Ignore
-  New-Item -ItemType Directory -Force data/raw/products, data/state, data/normalized, data/output, data/output/sql
-  ```
-- **Nếu dùng Command Prompt (cmd):**
-  ```cmd
-  rmdir /s /q data\raw\products
-  rmdir /s /q data\state
-  rmdir /s /q data\normalized
-  rmdir /s /q data\output
-  del data\raw\product_links.raw.json
-  mkdir data\raw\products
-  mkdir data\state
-  mkdir data\normalized
-  mkdir data\output
-  mkdir data\output\sql
-  ```
-- **Nếu dùng Git Bash / WSL:**
-  ```bash
-  rm -rf data/raw/products data/state data/normalized data/output data/raw/product_links.raw.json
-  mkdir -p data/raw/products data/state data/normalized data/output data/output/sql
-  ```
+1. **Dọn sạch thư mục dữ liệu cũ:**
+   * *Nếu dùng PowerShell:*
+     ```powershell
+     Remove-Item -Recurse -Force data/raw/products, data/state, data/normalized, data/output -ErrorAction Ignore
+     Remove-Item -Force data/raw/product_links.raw.json -ErrorAction Ignore
+     New-Item -ItemType Directory -Force data/raw/products, data/state, data/normalized, data/output, data/output/sql
+     ```
+   * *Nếu dùng Git Bash / Linux:*
+     ```bash
+     rm -rf data/raw/products data/state data/normalized data/output data/raw/product_links.raw.json
+     mkdir -p data/raw/products data/state data/normalized data/output data/output/sql
+     ```
 
-### Bước 3: Kiểm tra cấu hình file `.env`
-Mở file `.env` và đảm bảo các tham số sau đã được đặt chính xác:
-```env
-CRAWL_MODE=full
-RESUME=false   # Đặt là false ở lần chạy đầu tiên để quét sạch từ đầu
-HEADLESS=true  # Có thể đặt là true để ẩn trình duyệt chạy ngầm cho nhanh và nhẹ máy
+2. **Cập nhật lại file `.env`:**
+   ```env
+   RESUME=false
+   CRAWL_MODE=full
+   ```
+
+3. **Thực hiện chạy tuần tự quy trình Full Mode** bắt đầu từ lệnh `npm run collect:links`.
+
+---
+
+## 5. Cấu trúc dữ liệu đầu ra
+
+Thư mục dữ liệu sau khi cào và chuẩn hóa thành công:
 ```
-*(Sau khi tiến trình cào đã bắt đầu chạy, nếu gặp sự cố mạng hoặc bị dừng giữa chừng, bạn chỉ cần sửa `RESUME=true` và chạy lại lệnh cào để tiếp tục cào tiếp từ trang đang dở dang).*
-
-### Bước 4: Chạy quy trình cào dữ liệu Full
-- **Thu thập danh sách liên kết sản phẩm (Product Links):**
-  ```bash
-  npm run collect:links
-  ```
-  Lệnh này sẽ sử dụng API mới phân trang siêu tốc. Thời gian cào hàng ngàn sản phẩm sẽ được rút ngắn xuống chỉ còn vài phút thay vì hàng tiếng đồng hồ như trước.
-
-- **Thu thập thông tin chi tiết từng sản phẩm (Product Details):**
-  ```bash
-  npm run collect:details:full
-  ```
-  Tool sẽ truy cập vào từng link sản phẩm đã quét được ở trên để lấy thông tin chi tiết (thành phần, hình ảnh, hướng dẫn sử dụng, giá...) và lưu vào thư mục `data/raw/products/`.
-
-- **Cào lại sản phẩm lỗi (nếu có):**
-  ```bash
-  npm run retry:failed
-  ```
-
-- **Chuẩn hóa dữ liệu sang CSV (Normalize):**
-  ```bash
-  npm run normalize
-  ```
-
-- **Kiểm tra chất lượng dữ liệu (Validate):**
-  ```bash
-  npm run validate:data
-  ```
-
-- **Sinh script SQL Seed để nạp vào DB (Generate SQL):**
-  ```bash
-  npm run generate:sql
-  ```
-
-## 6. Retry failed
-Khi tiến trình cào dữ liệu gặp lỗi mạng hoặc timeout đối với một số sản phẩm, sử dụng lệnh sau để chạy lại:
-```bash
-npm run retry:failed
+data-collector/
+├── data/
+│   ├── raw/                 # Dữ liệu thô JSON (chia theo từng nhóm sản phẩm)
+│   ├── normalized/          # 15 file dữ liệu quan hệ CSV (products.csv, brands.csv,...)
+│   ├── state/               # Checkpoint lưu trạng thái (completed_urls.json, failed_urls.json)
+│   └── output/
+│       ├── data_quality_report.md     # Báo cáo đánh giá chất lượng dữ liệu
+│       ├── seed_longchau_demo.sql     # File SQL seed tổng hợp cho PostgreSQL
+│       └── sql/                       # Các file SQL phân đoạn theo batch nhỏ
+└── logs/                    # Ghi nhận log chi tiết tiến trình cào và lỗi (errors.log)
 ```
-Giải thích cơ chế hoạt động và cấu trúc file:
-- **`failed_urls.json`**: Lưu trữ danh sách các URL crawl thất bại kèm theo lý do lỗi (error message) và số lần đã retry.
-- **`retry_count`**: Đếm số lần hệ thống đã thử cào lại một URL lỗi, tự động dừng khi vượt quá ngưỡng cấu hình `RETRY_FAILED_LIMIT`.
-- **`completed_urls.json`**: Chứa danh sách các URL đã cào thành công để tool bỏ qua không cào lại, tối ưu tài nguyên và thời gian.
 
-## 7. Normalize data
-Chuẩn hóa dữ liệu thô (raw JSON) thu thập được sang dạng bảng dữ liệu có quan hệ (RDBMS):
-```bash
-npm run normalize
-```
-- **Output**: Các file CSV chuẩn hóa được lưu trữ tại thư mục `data/normalized/*.csv` (gồm 15 file tương ứng với 15 bảng cơ sở dữ liệu như `products.csv`, `active_ingredients.csv`, `product_documents.csv`...).
+---
 
-## 8. Validate data
-Kiểm tra chất lượng, dữ liệu trống và tính toàn vẹn của các file CSV:
-```bash
-npm run validate:data
-```
-- **Output**: File báo cáo chất lượng dữ liệu dưới dạng Markdown được tạo tại `data/output/data_quality_report.md`. Báo cáo đánh giá tỷ lệ điền thông tin và cảnh báo nếu phát hiện lỗi logic dữ liệu.
+## 6. Quy tắc an toàn và bảo mật
 
-## 9. Generate SQL
-Chuyển đổi dữ liệu CSV đã chuẩn hóa sang các script SQL INSERT để nạp dữ liệu demo cho database Supabase PostgreSQL:
-```bash
-npm run generate:sql
-```
-- **Output**:
-  - `data/output/seed_longchau_demo.sql`: File SQL tổng hợp chứa toàn bộ lệnh nạp dữ liệu.
-  - `data/output/sql/001_master_data.sql`: Chứa dữ liệu master dùng chung (danh mục, thương hiệu, nhà sản xuất, quốc gia, đơn vị tính, hoạt chất...).
-  - `data/output/sql/002_products_batch_001.sql`: Chứa dữ liệu sản phẩm, biến thể, hình ảnh, giá và tài liệu hướng dẫn sử dụng thuộc lô dữ liệu 001.
+* **Không gửi request dồn dập:** Luôn thiết lập tham số trễ ngẫu nhiên (`REQUEST_DELAY_RANDOM_MIN_MS` & `REQUEST_DELAY_RANDOM_MAX_MS`) tối thiểu 2-3 giây.
+* **Không cào dữ liệu người dùng:** Tool chỉ lấy thông tin sản phẩm công khai, tuyệt đối không lấy dữ liệu bình luận chi tiết hay thông tin khách hàng.
+* **Không commit dữ liệu thô:** Thư mục dữ liệu `data/` (ngoại trừ cấu hình) đã được đưa vào `.gitignore` để tránh việc đẩy file dung lượng lớn lên GitHub.
+* **Không tải ảnh về máy:** Tool chỉ lấy liên kết hình ảnh gốc trên CDN Long Châu và lưu vào cơ sở dữ liệu để tiết kiệm tài nguyên.
 
-## 10. Cấu trúc output
-Thư mục dữ liệu đầu ra được cấu trúc rõ ràng như sau:
-- **`data/raw`**: Chứa dữ liệu thô thu thập từ website ở định dạng JSON (chia theo batch).
-- **`data/normalized`**: Chứa 15 file CSV chuẩn hóa.
-- **`data/state`**: Lưu trữ các file trạng thái crawler (`completed_urls.json`, `failed_urls.json`, `duplicate_urls.json`, checkpoint...).
-- **`data/output`**: Chứa file báo cáo chất lượng (`data_quality_report.md`) và script SQL seed tổng hợp (`seed_longchau_demo.sql`).
-- **`data/output/sql`**: Chứa các file script SQL seed nhỏ được chia theo từng batch.
-- **`logs`**: Chứa file log chi tiết các bước thu thập và xử lý dữ liệu.
+---
 
-## 11. Quy tắc an toàn
-- **Không crawl quá nhanh**: Luôn bật cấu hình delay ngẫu nhiên hợp lý (`REQUEST_DELAY_RANDOM_MIN_MS` & `REQUEST_DELAY_RANDOM_MAX_MS`) để tránh tạo tải lớn lên server Nhà thuốc Long Châu.
-- **Không lấy dữ liệu cá nhân**: Tool chỉ lấy thông tin công khai của sản phẩm, không thu thập bất kỳ dữ liệu cá nhân nào của khách hàng hoặc nhân viên.
-- **Không lấy nội dung review/Q&A**: Chỉ thu thập rating trung bình (`rating_average`), số lượt đánh giá (`review_count`) và bình luận (`comment_count`) dưới dạng số liệu thống kê nếu có sẵn. Không cào nội dung bình luận của người dùng.
-- **Không tải ảnh hàng loạt về repo**: Chỉ lưu trữ URL tuyệt đối trỏ đến ảnh sản phẩm gốc, tuyệt đối không download file ảnh trực tiếp về thư mục mã nguồn.
-- **Không commit raw/output/state/logs**: Đảm bảo các thư mục dữ liệu phát sinh trong quá trình chạy được loại trừ hoàn toàn trong file `.gitignore` để tránh đẩy dữ liệu cào thô và log lên GitHub.
-- **Không dùng dữ liệu để tư vấn y tế thật**: Dữ liệu chỉ phục vụ mục đích kiểm thử và xây dựng dữ liệu demo cho đồ án học tập.
+## 7. Xử lý sự cố (Troubleshooting)
 
-## 12. Troubleshooting
-- **Playwright chưa cài browser**:
-  - *Sự cố*: Báo lỗi thiếu thư viện Chromium khi chạy tiến trình crawl.
-  - *Khắc phục*: Chạy lệnh `npm run install:browser` để cài đặt môi trường browser cho Playwright.
-- **Không lấy được product links**:
-  - *Sự cố*: File link sản phẩm trống hoặc không lấy đủ link của danh mục.
-  - *Khắc phục*: Kiểm tra cấu trúc trang web nguồn xem class/id của thẻ danh mục hoặc danh sách sản phẩm có thay đổi không và cập nhật lại selector tương ứng trong script link collector.
-- **Website đổi layout**:
-  - *Sự cố*: Tiến trình cào chi tiết bị lỗi hoặc lưu dữ liệu trống (null) ở nhiều trường.
-  - *Khắc phục*: Mở Developer Tools (F12) trên trình duyệt, kiểm tra cấu trúc DOM mới và cập nhật lại selector trong file details collector.
-- **Crawler timeout**:
-  - *Sự cố*: Tiến trình crawl bị đứng hoặc lỗi kết nối do phản hồi chậm từ máy chủ nguồn.
-  - *Khắc phục*: Tăng thời gian chờ (timeout) trong cấu hình của Playwright hoặc chuyển cấu hình `HEADLESS=false` để quan sát trực tiếp bot hoạt động và xử lý captcha nếu có.
-- **failed_urls có URL lỗi**:
-  - *Sự cố*: Một số sản phẩm bị lỗi 404 hoặc bị chặn bởi cơ chế bảo mật (Cloudflare).
-  - *Khắc phục*: Kiểm tra URL trực tiếp trên trình duyệt. Nếu do lỗi Cloudflare, cân nhắc cấu hình proxy hoặc tối ưu lại HTTP headers (User-Agent).
-- **CSV lỗi encoding**:
-  - *Sự cố*: Khi mở file CSV chuẩn hóa trên MS Excel bị hiển thị lỗi font tiếng Việt.
-  - *Khắc phục*: Sử dụng chức năng Import Data (From Text/CSV) trong Excel và chọn Encoding là UTF-8 thay vì mở trực tiếp bằng cách click đúp.
-- **SQL quá lớn**:
-  - *Sự cố*: File `seed_longchau_demo.sql` có dung lượng quá lớn dẫn đến lỗi timeout khi import bằng giao diện web của Supabase.
-  - *Khắc phục*: Sử dụng các file SQL phân đoạn nhỏ trong thư mục `data/output/sql/` để import từng phần.
-- **Supabase import lỗi**:
-  - *Sự cố*: Lỗi ràng buộc khóa ngoại (foreign key constraint) khi import dữ liệu.
-  - *Khắc phục*: Nhất thiết phải import file chứa dữ liệu danh mục/master data trước (`001_master_data.sql`), sau đó mới import các batch sản phẩm (`002_products_batch_001.sql`).
+* **Lỗi thiếu browser Playwright:**
+  * *Triệu chứng:* Báo lỗi thiếu thư viện Chromium khi chạy script.
+  * *Khắc phục:* Chạy lại lệnh `npm run install:browser`.
+* **Trang web bị chặn bởi Cloudflare:**
+  * *Triệu chứng:* Báo lỗi 403 Forbidden hoặc WAF Block.
+  * *Khắc phục:* Đổi địa chỉ IP mạng (ví dụ kết nối qua mạng 4G phát từ điện thoại), đổi cấu hình `HEADLESS=false` để thực hiện xác minh tay trên màn hình Chromium nếu được yêu cầu.
+* **Lỗi ràng buộc khóa ngoại (Foreign Key) khi import SQL:**
+  * *Khắc phục:* Bạn phải import file chứa dữ liệu master data trước (`001_master_data.sql`), sau đó mới import các batch sản phẩm (`002_products_batch_001.sql`).
 
-## 13. Quy trình cào lại từ đầu (Scrape from scratch)
-Để tiến hành cào lại từ đầu toàn bộ dữ liệu trên website Nhà thuốc Long Châu, bạn cần thực hiện các bước dọn dẹp dữ liệu cũ, cài đặt môi trường và điều chỉnh lại file cấu hình `.env` như sau:
+---
 
-### 13.1. Chuẩn bị môi trường & Cài đặt lại (Installation)
-Nếu bạn chạy trên một máy mới hoặc muốn cài đặt sạch lại toàn bộ thư viện:
-- Đảm bảo máy đã cài đặt Node.js (Khuyến nghị phiên bản 18 trở lên).
-- Mở Terminal (Command Prompt, PowerShell hoặc Git Bash) và di chuyển vào thư mục `data-collector`:
-  ```bash
-  cd d:\Downloads\tools\tools\data-collector
-  ```
-- Cài đặt các thư viện phụ thuộc:
-  ```bash
-  npm install
-  ```
-- Cài đặt môi trường trình duyệt Chromium của Playwright (bắt buộc để chạy công cụ cào):
-  ```bash
-  npm run install:browser
-  ```
+## 8. Disclaimer (Tuyên bố từ chối trách nhiệm)
 
-### 13.2. Dọn dẹp dữ liệu cũ (Cleanup)
-Để đảm bảo không bị lẫn dữ liệu cũ và tiến trình không nhận nhầm các checkpoint đã hoàn thành trước đó, bạn cần xóa bỏ các thư mục trạng thái và dữ liệu cũ.
-
-Tùy vào Terminal bạn đang sử dụng trên Windows, hãy chạy các lệnh sau:
-
-- **Nếu sử dụng PowerShell:**
-  ```powershell
-  Remove-Item -Recurse -Force data/raw/products, data/state, data/normalized, data/output -ErrorAction Ignore
-  Remove-Item -Force data/raw/product_links.raw.json, data/raw/categories.raw.json -ErrorAction Ignore
-  New-Item -ItemType Directory -Force data/raw/products, data/state, data/normalized, data/output, data/output/sql
-  ```
-- **Nếu sử dụng Command Prompt (cmd):**
-  ```cmd
-  rmdir /s /q data\raw\products
-  rmdir /s /q data\state
-  rmdir /s /q data\normalized
-  rmdir /s /q data\output
-  del data\raw\product_links.raw.json
-  del data\raw\categories.raw.json
-  mkdir data\raw\products
-  mkdir data\state
-  mkdir data\normalized
-  mkdir data\output
-  mkdir data\output\sql
-  ```
-- **Nếu sử dụng Git Bash / WSL:**
-  ```bash
-  rm -rf data/raw/products data/state data/normalized data/output data/raw/product_links.raw.json data/raw/categories.raw.json
-  mkdir -p data/raw/products data/state data/normalized data/output data/output/sql
-  ```
-
-### 13.3. Cấu hình file `.env`
-Mở file `.env` và cập nhật lại các tham số quan trọng sau:
-- **`RESUME=false`**: Thiết lập thành `false` ở lần chạy đầu tiên để vô hiệu hóa việc đọc trạng thái cũ. (Sau khi hệ thống bắt đầu chạy và nếu bị gián đoạn, bạn có thể chuyển lại thành `true` để tiếp tục cào tiếp từ điểm dừng chân trước đó).
-- **`CRAWL_MODE=full`**: Thiết lập thành `full` để thu thập toàn bộ dữ liệu (nếu chọn `sample`, công cụ chỉ cào thử nghiệm giới hạn số sản phẩm trong biến `MAX_PRODUCTS`).
-- **`HEADLESS=false`**: Khuyến nghị thiết lập thành `false` khi chạy từ đầu. Việc này sẽ mở cửa sổ trình duyệt Chromium hiển thị trực quan giúp bạn dễ dàng theo dõi và xử lý thủ công (như vượt Cloudflare Captcha) nếu IP của bạn bị nghi ngờ.
-- **`REQUEST_DELAY_RANDOM_MIN_MS=2000`** và **`REQUEST_DELAY_RANDOM_MAX_MS=5000`**: Giữ độ trễ ngẫu nhiên từ 2-5 giây giữa các request để tránh việc gửi yêu cầu quá dồn dập khiến IP của bạn bị khóa bởi Cloudflare WAF.
-
-### 13.4. Quy trình chạy các bước cào dữ liệu từ đầu
-Sau khi đã chuẩn bị xong, bạn chạy tuần tự các lệnh sau:
-
-- **Bước 1: Cào cấu trúc danh mục sản phẩm (Categories)**
-  ```bash
-  npm run collect:categories
-  ```
-  *Mục tiêu:* Tạo ra file chứa liên kết của các danh mục con `data/raw/categories.raw.json`.
-- **Bước 2: Thu thập danh sách liên kết sản phẩm (Product Links)**
-  ```bash
-  npm run collect:links
-  ```
-  *Mục tiêu:* Truy cập các danh mục, tự động cuộn trang (scroll) và nhấn nút "Xem thêm" để quét sạch liên kết sản phẩm lưu vào `data/raw/product_links.raw.json`.
-  *Lưu ý:* Nếu bị Cloudflare chặn, terminal sẽ cảnh báo phát hiện IP bị hạn chế. Bạn chỉ cần đổi IP mạng (ví dụ phát mạng 4G từ điện thoại di động) rồi nhấn `y` trên terminal để tiếp tục.
-- **Bước 3: Thu thập thông tin chi tiết từng sản phẩm (Product Details)**
-  ```bash
-  npm run collect:details:full
-  ```
-  *Mục tiêu:* Mở từng link sản phẩm để lấy thông tin chi tiết (tên, thành phần, giá, nhà sản xuất, hướng dẫn sử dụng...) và lưu thành các lô JSON trong thư mục `data/raw/products/`.
-- **Bước 4: Cào lại các sản phẩm bị lỗi mạng (Retry Failed - Tùy chọn)**
-  ```bash
-  npm run retry:failed
-  ```
-  *Mục tiêu:* Tự động cào lại các URL sản phẩm nằm trong danh sách lỗi `failed_urls.json`.
-- **Bước 5: Chuẩn hóa dữ liệu thô sang CSV (Normalize)**
-  ```bash
-  npm run normalize
-  ```
-  *Mục tiêu:* Chuyển đổi dữ liệu JSON thô đã cào thành 15 file CSV chuẩn hóa dạng bảng RDBMS đặt tại `data/normalized/`.
-- **Bước 6: Kiểm tra chất lượng dữ liệu (Validate)**
-  ```bash
-  npm run validate:data
-  ```
-  *Mục tiêu:* Xuất báo cáo chất lượng dữ liệu Markdown tại `data/output/data_quality_report.md` để kiểm tra độ toàn vẹn của dữ liệu CSV.
-- **Bước 7: Sinh SQL Seed Script (Generate SQL)**
-  ```bash
-  npm run generate:sql
-  ```
-  *Mục tiêu:* Tạo các tệp SQL script (`seed_longchau_demo.sql` và các batch SQL) để sẵn sàng import dữ liệu trực tiếp vào cơ sở dữ liệu Supabase/PostgreSQL.
-
-## 14. Disclaimer y tế
-> **“Thông tin thuốc, cách dùng, liều dùng, tương tác thuốc và khuyến nghị chỉ là dữ liệu tham khảo phục vụ đồ án, không thay thế tư vấn của dược sĩ, bác sĩ hoặc chuyên gia y tế.”**
+> ⚠️ **MỤC ĐÍCH HỌC TẬP:** Dữ liệu thu thập từ Nhà thuốc Long Châu thông qua công cụ này chỉ nhằm mục đích thử nghiệm và làm dữ liệu demo cho đồ án học tập PharmaAssist. Thông tin chi tiết về thuốc, cách sử dụng, liều dùng và chỉ định KHÔNG sử dụng làm tài liệu tư vấn y khoa thực tế.
