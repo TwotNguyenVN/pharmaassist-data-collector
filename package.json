@@ -9,9 +9,9 @@
     "collect:details:sample": "cross-env CRAWL_MODE=sample tsx src/03_collect_product_details.ts",
     "collect:details:full": "cross-env CRAWL_MODE=full tsx src/03_collect_product_details.ts",
     "retry:failed": "tsx src/06_retry_failed.ts",
-    "normalize": "tsx src/04_normalize_data.ts",
-    "validate:data": "tsx src/07_validate_data.ts",
-    "generate:sql": "tsx src/05_generate_seed_sql.ts",
+    "normalize": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" tsx src/04_normalize_data.ts",
+    "validate:data": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" tsx src/07_validate_data.ts",
+    "generate:sql": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" tsx src/05_generate_seed_sql.ts",
     "collect:all:sample": "npm run collect:links && npm run collect:details:sample && npm run normalize && npm run validate:data && npm run generate:sql",
     "collect:all:full": "npm run collect:links && npm run collect:details:full && npm run retry:failed && npm run normalize && npm run validate:data && npm run generate:sql",
     "pipeline:sample:clean": "bash scripts/run_sample_pipeline.sh"
