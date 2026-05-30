@@ -496,13 +496,14 @@ async function main(): Promise<void> {
     const batchPrices = productPricesCsv.filter(price => batchVariantCodes.has(price.variant_code));
     batchPrices.forEach((row, i) => {
       if (validateRequiredFields('product_prices', row, i)) {
-        batchSql += `INSERT INTO product_prices (variant_code, unit_code, price, currency, is_default, conversion_factor, source_name, source_url, source_note, is_demo_data, collected_at) VALUES (\n` +
+        batchSql += `INSERT INTO product_prices (variant_code, unit_code, price, currency, is_default, conversion_factor, is_contact_price, source_name, source_url, source_note, is_demo_data, collected_at) VALUES (\n` +
           `  ${escapeSqlString(row.variant_code)},\n` +
           `  ${escapeSqlString(row.unit_code)},\n` +
           `  ${escapeSqlNumber(row.price)},\n` +
           `  ${escapeSqlString(row.currency)},\n` +
           `  ${escapeSqlBoolean(row.is_default)},\n` +
           `  ${escapeSqlNumber(row.conversion_factor)},\n` +
+          `  ${escapeSqlBoolean(row.is_contact_price)},\n` +
           `  ${escapeSqlString(row.source_name)},\n` +
           `  ${escapeSqlString(row.source_url)},\n` +
           `  ${escapeSqlString(row.source_note)},\n` +

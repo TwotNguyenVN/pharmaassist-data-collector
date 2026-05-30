@@ -188,15 +188,13 @@ export async function extractProductDetails(page: Page, linkRaw: ProductLinkRaw)
        }
     }
 
-    let priceStatus: "AVAILABLE" | "CONTACT_REQUIRED" | "NOT_AVAILABLE" | "UNKNOWN" = "UNKNOWN";
+    let priceStatus: "AVAILABLE" | "PRESCRIPTION_ONLY" | "CONTACT" = "CONTACT";
     if (sellingPrice !== null) {
         priceStatus = "AVAILABLE";
     } else if (isPrescription) {
-        priceStatus = "CONTACT_REQUIRED";
-    } else if (availablePriceUnits.length > 0) {
-        priceStatus = "CONTACT_REQUIRED";
+        priceStatus = "PRESCRIPTION_ONLY";
     } else {
-        priceStatus = "UNKNOWN";
+        priceStatus = "CONTACT";
     }
 
     // --- SEO ---
@@ -279,8 +277,8 @@ export async function extractProductDetails(page: Page, linkRaw: ProductLinkRaw)
         manufacturer_name: manufacturer,
         manufacturer_address: null,
         manufacturing_country: manufacturingCountry,
-        shelf_life_text: null,
-        shelf_life_months: null,
+        shelf_life_text: product.expirationDate || null,
+        shelf_life_months: product.expirationDate ? (parseInt(product.expirationDate.replace(/[^\d]/g, ''), 10) || null) : null,
         storage_instruction_short: storageInstruction,
         medicine_type: medicineType,
         is_medicine: isMedicine

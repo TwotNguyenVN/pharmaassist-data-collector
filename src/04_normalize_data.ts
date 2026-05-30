@@ -324,18 +324,22 @@ async function main() {
             ...common
           });
 
+          const rawPriceVal = parsePrice(pu.price_text) || pu.price;
+          const isContactPrice = rawPriceVal === null || rawPriceVal === undefined || rawPriceVal <= 0;
+
           product_prices.push({
             variant_code: variantCode,
             unit_code: uCode,
-            price: parsePrice(pu.price_text) || pu.price,
+            price: isContactPrice ? 0 : rawPriceVal,
             currency: pu.currency_symbol || 'VND',
             is_default: pu.is_default || false,
+            is_contact_price: isContactPrice,
             conversion_factor: null, // Hard to infer
             ...common
           });
         }
       } else {
-        // If no available_price_units, create a default variant
+        // If no available_price_units, create a default variant and a contact price
         let variantCode = `${productCode}-V1`;
         product_variants.push({
           variant_code: variantCode,
@@ -346,6 +350,17 @@ async function main() {
           packaging_size: raw.medicine.package_specification,
           is_default: true,
           is_sell_default: true,
+          ...common
+        });
+
+        product_prices.push({
+          variant_code: variantCode,
+          unit_code: null,
+          price: 0,
+          currency: 'VND',
+          is_default: true,
+          is_contact_price: true,
+          conversion_factor: null,
           ...common
         });
       }
